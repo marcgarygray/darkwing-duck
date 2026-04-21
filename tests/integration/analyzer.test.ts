@@ -122,6 +122,30 @@ describe('import-forms', () => {
   })
 })
 
+describe('tsconfig-types', () => {
+  it('detects @types/* packages in tsconfig types array that are not declared', async () => {
+    const result = await analyze({ cwd: resolve(fixturesDir, 'tsconfig-types') })
+
+    const names = result.phantomDeps.map((d) => d.packageName)
+    expect(names).toContain('@types/jest')
+    expect(names).toContain('@types/node')
+  })
+
+  it('does not flag @types/* packages that are declared', async () => {
+    const result = await analyze({ cwd: resolve(fixturesDir, 'tsconfig-types') })
+
+    const names = result.phantomDeps.map((d) => d.packageName)
+    expect(names).not.toContain('@types/react')
+  })
+
+  it('classifies tsconfig-types phantoms as devDependency', async () => {
+    const result = await analyze({ cwd: resolve(fixturesDir, 'tsconfig-types') })
+
+    const jestTypes = result.phantomDeps.find((d) => d.packageName === '@types/jest')
+    expect(jestTypes?.suggestedDepType).toBe('devDependency')
+  })
+})
+
 describe('excludePackages', () => {
   it('does not flag packages listed in excludePackages', async () => {
     const result = await analyze({

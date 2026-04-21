@@ -44,7 +44,7 @@ export async function analyze(options: AnalyzerOptions = {}): Promise<AnalysisRe
   const project: ProjectInfo = {
     cwd,
     declaredDeps,
-    tsconfigPaths: tsconfigResult ?? { pathsBasePath: cwd, paths: {} },
+    tsconfigPaths: tsconfigResult ?? { pathsBasePath: cwd, paths: {}, globalTypes: [] },
     bundlerAliases: opts.bundlerAliases,
     excludePackages: new Set(opts.excludePackages),
     packageImports,
@@ -121,6 +121,23 @@ export async function analyze(options: AnalyzerOptions = {}): Promise<AnalysisRe
           kinds: new Set([kind]),
           isOptional: record.isOptional,
           hasOnlyTypeImports: isTypeOnly,
+        })
+      }
+    }
+  }
+
+  // Check tsconfig `types` array for undeclared @types/* packages
+  for (const typeEntry of project.tsconfigPaths.globalTypes) {
+    const packageName = `@types/${typeEntry}`
+    if (!project.declaredDeps.has(packageName) && !project.excludePackages.has(packageName)) {
+      if (!phantomMap.has(packageName)) {
+        phantomMap.set(packageName, {
+          specifiers: new Set([packageName]),
+          locations: [{ file: tsconfigPath, line: 1, column: 1, importKind: 'tsconfig-types' }],
+          classification: 'certain',
+          kinds: new Set(['config']),
+          isOptional: false,
+          hasOnlyTypeImports: true,
         })
       }
     }

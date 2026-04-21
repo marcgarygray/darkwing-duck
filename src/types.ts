@@ -5,6 +5,7 @@ export type ImportKind =
   | 'require-resolve'
   | 'type-only'
   | 're-export'
+  | 'tsconfig-types'
 
 export type SpecifierKind =
   | 'builtin'
@@ -86,6 +87,7 @@ export interface TsconfigPaths {
   baseUrl?: string
   pathsBasePath: string
   paths: Record<string, string[]>
+  globalTypes: string[]
 }
 
 export interface ProjectInfo {
