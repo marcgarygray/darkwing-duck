@@ -25,7 +25,7 @@ Node 20 is the current LTS with the widest install base on CI. It provides nativ
 
 ---
 
-## ADR-002: Single package (`phantom-deps`), not a scoped split
+## ADR-002: Single package (`darkwing-duck`), not a scoped split
 
 **Decision:** Ship as one package with both library and CLI exports. Not split into
 `@darkwing-duck/core` + `@darkwing-duck/cli`.
@@ -60,8 +60,8 @@ The `package.json` `exports` field provides clean separation:
 **Decision:** Use `@babel/parser` + `@babel/traverse` for all file parsing. No tiered
 lexer approach.
 
-**Reasoning:** The project (back-office) uses `@swc/jest` for test transforms, but SWC
-does not expose a stable JS traversal API. `@babel/parser` is the most widely deployed
+**Reasoning:** Large TypeScript projects commonly use `@swc/jest` for test transforms, but
+SWC does not expose a stable JS traversal API. `@babel/parser` is the most widely deployed
 JS/TS parser with a well-understood AST and excellent JSX/TSX support. It handles every
 import form we need:
 
@@ -76,7 +76,7 @@ import form we need:
 `es-module-lexer` was evaluated. It is faster (WebAssembly) but:
 1. Doesn't distinguish `import type` from value imports — we need that for devDep
    classification.
-2. Doesn't extract `require()` calls — back-office and its deps use CJS in config files.
+2. Doesn't extract `require()` calls — large projects and their deps use CJS in config files.
 3. Can't detect try/catch optional require patterns — needed for `optionalDependencies`.
 4. Returns byte offsets, not AST nodes — post-processing to get line/column for reporting
    adds complexity that erodes the speed advantage.
@@ -99,21 +99,27 @@ shows parsing is hot, we can revisit oxc in a later version.
 
 ---
 
-## ADR-004: Alias resolution requires disk verification for wildcard patterns
+## ADR-004: Alias resolution requires disk verification for bare wildcard patterns
 
-**Decision:** When a tsconfig `paths` pattern is a wildcard (`*`), only classify a
-specifier as an alias if the mapped path actually exists on disk.
+**Decision:** When a tsconfig `paths` pattern is a bare wildcard (the pattern is exactly
+`*`, with no prefix), only classify a specifier as an alias if the mapped path actually
+exists on disk. Patterns with a prefix (`src/*`, `@/*`) are trusted on pattern match alone.
 
-**Reasoning:** `back-office` has `"*": ["./@mf-types/*"]` in its tsconfig. Without disk
-verification, this pattern would match every import specifier and classify all of them
-as aliases — producing zero phantom dep reports. The TypeScript compiler itself uses the
-same logic: it tries the mapped path and falls through if the file doesn't exist.
+**Reasoning:** A common Module Federation pattern is:
+```json
+"*": ["./@mf-types/*"]
+```
+Without disk verification, this pattern would match every import specifier and classify
+all of them as aliases — producing zero phantom dep reports. With it, only specifiers
+that have a corresponding file in `@mf-types/` (tried with TypeScript's standard extension
+candidates) are treated as aliases.
 
-This means the alias resolver does a `fs.existsSync`-equivalent check on the mapped paths.
-This is the correct behavior per TypeScript's module resolution algorithm, not a hack.
+The TypeScript compiler uses the same logic: it tries the mapped path and falls through
+if the file doesn't exist. Our behavior matches the compiler's.
 
-**Non-wildcard patterns** (`src/*`, `@/components/*`) are matched by pattern comparison
-only — no disk check needed because the user explicitly mapped a namespace.
+Patterns with a meaningful prefix (`src/*`, `@/components/*`) are different — they
+represent an explicitly scoped namespace. Trusting them on match is correct and avoids
+expensive disk checks for every import in a large source tree.
 
 ---
 
@@ -147,8 +153,7 @@ we can mark it `peerDependencies` at v0.3+.
 
 **Reasoning:** `node_modules` gives the exact version currently installed — safe and
 deterministic. It requires the repo to have a valid `node_modules` directory, which is
-the normal pre-migration state (Yarn installed, about to switch to pnpm). For back-office,
-`node_modules` exists and has 1,640 directories. This will work.
+the normal pre-migration state (Yarn installed, about to switch to pnpm).
 
 The lockfile fallback handles cases where `node_modules` was cleaned before running.
 The registry fallback handles packages not yet installed at all.
@@ -168,10 +173,10 @@ The registry fallback handles packages not yet installed at all.
 `source` file (in `src/`, not matching test patterns), classify it as a `dependency`.
 
 **Reasoning:** This is the same heuristic ESLint's `import/no-extraneous-dependencies`
-rule uses (and what `.eslintrc.js` in back-office already configures). It's familiar,
-configurable, and conservative: when in doubt, flag as a runtime dependency.
+rule uses. It's familiar, configurable, and conservative: when in doubt, flag as a
+runtime dependency.
 
-**Default test patterns** (derived from back-office's Jest + Playwright config):
+**Default test patterns** (suitable for React apps using Jest + Playwright):
 ```
 **/*.test.{ts,tsx,js,jsx}
 **/*.spec.{ts,tsx,js,jsx}
@@ -186,8 +191,8 @@ playwright.config.*
 
 **Rejected:**
 - **Inspect the import graph to determine reachability from entry point:** Correct but
-  complex. It requires building a dependency graph from the entry point, which is bundler-
-  specific (entry point is in `rsbuild.config.ts` for back-office). Overkill for v1.
+  complex. It requires building a dependency graph from the entry point, which lives in
+  bundler config files and is not statically extractable. Overkill for v1.
 
 ---
 
@@ -195,7 +200,7 @@ playwright.config.*
 
 **Decision:** Do not attempt to parse `rsbuild.config.*`, `webpack.config.*`, or
 `vite.config.*` to auto-detect resolve aliases. Require users to either mirror aliases
-in `tsconfig.json paths` (recommended) or specify them in `phantom-deps.config.*`.
+in `tsconfig.json paths` (recommended) or specify them via `bundlerAliases`.
 
 **Reasoning:** Bundler config files are TypeScript/JavaScript that may:
 - Import other modules
@@ -203,10 +208,10 @@ in `tsconfig.json paths` (recommended) or specify them in `phantom-deps.config.*
 - Export a function (not a static object)
 - Use dynamic plugin systems
 
-Safe static extraction is not reliably possible without executing the file. For back-office,
-the Rspack aliases (`src`, `assets`) are already in `tsconfig paths`, so auto-detection
-is not needed in practice. For cases where they diverge, the `bundlerAliases` escape hatch
-is sufficient.
+Safe static extraction is not reliably possible without executing the file. In many
+projects, Rspack/webpack/Vite aliases are already mirrored in `tsconfig paths`, so
+auto-detection is not needed in practice. For cases where they diverge, the
+`bundlerAliases` escape hatch is sufficient.
 
 **Alternative documented for users:** Mirror all bundler aliases in `tsconfig.json paths`.
 This is a best practice regardless — TypeScript can't resolve the imports without it.
@@ -219,15 +224,15 @@ This is a best practice regardless — TypeScript can't resolve the imports with
 tool will not auto-detect them.
 
 **Reasoning:** MF remote names appear in source files as import specifiers
-(`backoffice-remote-brands/SomeComponent`) but are not npm packages. They are configured
-in bundler config files (see ADR-008 — we don't parse those). Attempting to heuristically
-detect them (e.g., "if the package doesn't exist in node_modules") would produce false
-negatives for legitimately phantom deps that also aren't in node_modules.
+(`my-remote-app/SomeComponent`) but are not npm packages. They are configured in bundler
+config files (see ADR-008 — we don't parse those). Attempting to heuristically detect them
+(e.g., "if the package doesn't exist in node_modules") would produce false negatives for
+legitimately phantom deps that also aren't in node_modules.
 
-For back-office, the config is:
+Example config:
 ```json
 {
-  "excludePackages": ["backoffice-remote-brands", "dutchieIntelligenceRemote"]
+  "excludePackages": ["remote-checkout", "remote-analytics"]
 }
 ```
 

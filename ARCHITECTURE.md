@@ -6,9 +6,9 @@ A library + CLI for detecting **phantom dependencies**: packages a JavaScript/Ty
 imports but never declares in `package.json`. Under Yarn's flat `node_modules`, these
 accidentally resolve via hoisting. Under pnpm's strict symlinked layout, they fail at runtime.
 
-This document describes v1, designed and validated against a real production target:
-`back-office` — a large Rspack + React + TypeScript + Module Federation app with ~190
-declared dependencies, custom tsconfig path aliases, and a `yarn.lock` as ground truth.
+This document describes v1, validated against a large production Rspack + React + TypeScript
++ Module Federation app with ~190 declared dependencies, custom tsconfig path aliases, and
+a `yarn.lock` as ground truth.
 
 ---
 
@@ -20,7 +20,7 @@ declared dependencies, custom tsconfig path aliases, and a `yarn.lock` as ground
 │                                                                          │
 │  ┌─────────────┐    ┌──────────────┐    ┌────────────────────────────┐  │
 │  │ CLI (bin/)  │    │  Public API  │    │   Config Loader            │  │
-│  │  cli.ts     │───▶│  analyze()   │◀───│   phantom-deps.config.*    │  │
+│  │  cli.ts     │───▶│  analyze()   │◀───│   darkwing-duck.config.*   │  │
 │  └─────────────┘    └──────┬───────┘    │   CLI flags, programmatic  │  │
 │                            │            └────────────────────────────┘  │
 │                            ▼                                             │
@@ -79,7 +79,7 @@ declared dependencies, custom tsconfig path aliases, and a `yarn.lock` as ground
 ## Module Layout
 
 ```
-phantom-deps/
+darkwing-duck/
 ├── src/
 │   ├── index.ts                   # Public API — re-exports analyze(), types
 │   ├── analyzer.ts                # Orchestrator: wires all modules together
@@ -114,7 +114,7 @@ phantom-deps/
 │       └── config-loader.ts       # Merges file config, CLI flags, programmatic opts
 │
 ├── bin/
-│   └── phantom-deps.ts            # CLI entry point (uses commander)
+│   └── cli.ts                     # CLI entry point
 │
 ├── fixtures/                      # Each dir is a self-contained mini-project
 │   ├── basic-phantom/
@@ -164,13 +164,18 @@ function isAlias(specifier: string, project: ProjectInfo): boolean {
 }
 ```
 
-**This "check-disk" step is critical for back-office.** The root tsconfig has:
+**This "check-disk" step is critical for projects using Module Federation.** A common MF
+pattern is a catch-all tsconfig path:
 ```json
 "*": ["./@mf-types/*"]
 ```
 This `*` wildcard would match every specifier. Without the disk check, it would mask all
 phantom deps. With it, only specifiers that have a corresponding file in `@mf-types/` are
 considered aliases. Everything else falls through to the phantom dep check.
+
+The disk check is **only applied to bare wildcard patterns** (no prefix). Patterns with a
+meaningful prefix like `src/*` or `@/*` are trusted on match alone — the user explicitly
+declared that namespace.
 
 ### Phase 3 — File Scanning
 
@@ -270,15 +275,16 @@ export interface AnalyzerOptions {
 
   /**
    * Bundler aliases that are NOT in tsconfig paths.
-   * e.g. { 'src': './src', 'assets': './assets' } for Rspack/webpack.
-   * In back-office, tsconfig paths covers these — but users with divergence need this.
+   * e.g. { 'src': './src', 'assets': './assets' } for Rspack/webpack projects
+   * where the bundler alias uses a bare name but tsconfig uses a "src/*" pattern.
    */
   bundlerAliases?: Record<string, string>;
 
   /**
    * Package name prefixes to unconditionally exclude.
-   * Use for Module Federation remote names that appear as import specifiers.
-   * e.g. ['backoffice-remote-brands', 'dutchieIntelligenceRemote']
+   * Use for Module Federation remote names that appear as import specifiers
+   * but are not npm packages.
+   * e.g. ['remote-checkout', 'remote-analytics']
    */
   excludePackages?: string[];
 
@@ -344,99 +350,90 @@ Supported config filenames (loaded from `cwd`, first match wins):
 - `darkwing-duck.config.json`
 - `.darkwing-duckrc` (JSON)
 
-For `back-office`, the config would be committed at the repo root:
+For a project with Module Federation remotes and sub-directories to exclude:
 ```json
 {
   "tsconfig": "tsconfig.json",
-  "excludePackages": ["backoffice-remote-brands", "dutchieIntelligenceRemote"],
-  "ignore": ["cli/**", "k6/**"]
+  "excludePackages": ["remote-checkout", "remote-analytics"],
+  "ignore": ["tools/**", "scripts/**"]
 }
 ```
 
-The `cli/` and `k6/` subdirectories are explicitly excluded. Both have their own
-`yarn.lock` files and are self-contained projects that don't ship to production. If
-they need a separate Yarn→pnpm migration, run `darkwing-duck` with `--cwd cli/` and
-`--cwd k6/` independently.
+Sub-directories with their own `yarn.lock` files are self-contained projects. Exclude them
+from the root scan and migrate them separately with `darkwing-duck --cwd <subdir>`.
 
 ---
 
-## Back-Office Specific Challenges & Mitigations
+## Known Challenges & Mitigations
 
-This section documents the features of `back-office` that drove specific design decisions.
+This section documents patterns found in real production apps that required specific design
+decisions.
 
-### 1. Wildcard tsconfig path `"*": ["./@mf-types/*"]`
+### 1. Bare wildcard tsconfig path `"*": ["./@mf-types/*"]`
 
 **Problem:** This pattern matches every specifier. Without disk-checking, every import
 would be classified as an alias, reporting zero phantoms.
 
-**Mitigation:** The alias resolver checks whether the mapped path exists on disk before
-classifying a match as an alias. Only specifiers with actual files in `@mf-types/` are
-treated as aliases.
+**Mitigation:** The alias resolver checks whether the mapped path actually exists on disk
+(trying TypeScript's standard extension candidates: `.ts`, `.tsx`, `.d.ts`, `/index.ts`,
+etc.) before classifying a wildcard match as an alias. This matches TypeScript's own
+module resolution behavior.
 
 ### 2. Module Federation remote names
 
-**Problem:** Source files import from `backoffice-remote-brands/ComponentName`. This
-is not a package in `node_modules` and won't be in `package.json` — it's a runtime
-remote. It would be falsely flagged as a phantom dep.
+**Problem:** Source files import from `my-remote-app/ComponentName`. This is not a
+package in `node_modules` and won't be in `package.json` — it's a runtime remote loaded
+via an MF manifest. It would be falsely flagged as a phantom dep.
 
-**Mitigation:** `excludePackages` option. Users list MF remote names here. In back-office:
+**Mitigation:** `excludePackages` option. Users list MF remote names here:
 ```json
 {
-  "excludePackages": ["backoffice-remote-brands", "dutchieIntelligenceRemote"]
+  "excludePackages": ["remote-checkout", "remote-analytics"]
 }
 ```
 
-We do not attempt to parse `rsbuild.config.mf.ts` to auto-detect remotes — TypeScript
-config files are not safely parseable at this level without executing them. Document this
-limitation and make the config option prominent.
+We do not attempt to parse bundler MF config files to auto-detect remote names —
+TypeScript/JavaScript config files are not safely parseable without executing them.
 
-### 3. Dual tsconfig files (tsconfig.json + tsconfig-ci.json)
+### 3. Multiple tsconfig files (e.g. tsconfig.json + tsconfig-ci.json)
 
-**Problem:** `tsconfig-ci.json` has different `paths` (e.g., `i18next` is remapped to a
-shim, the `*` wildcard is absent). Analysis results differ depending on which config is used.
+**Problem:** Projects sometimes maintain alternate tsconfig variants with different `paths`
+(e.g. remapping a module to a shim for CI, or omitting the `*` wildcard). Analysis results
+differ depending on which config is used.
 
-**Mitigation:** Use `tsconfig.json` — the one the production build uses. `tsconfig-ci.json`
-is a test-run variant that disables strict mode and remaps `i18next`; it doesn't represent
-the real resolution environment. The `tsconfig` option allows override if needed.
+**Mitigation:** Default to `tsconfig.json` — the one the production build uses. The
+`tsconfig` option allows override for specific scenarios.
 
-### 4. Rspack resolve aliases not in tsconfig
+### 4. Bundler aliases not mirrored in tsconfig
 
-**Problem:** `rsbuild.config.ts` defines `{ src: './src', assets: './assets' }` as
-Rspack aliases. In back-office these are mirrored in tsconfig `paths`, so our tsconfig
-reading handles them. But this won't always be the case.
+**Problem:** Rspack/webpack/Vite projects often define `resolve.alias` entries. If these
+are not also in `tsconfig.json paths`, the tool won't recognise them automatically.
 
-**Mitigation:** Document that aliases must be mirrored in tsconfig paths to be detected
-automatically. The `bundlerAliases` option provides an escape hatch for the mismatched cases.
+**Mitigation:** Document that aliases should be mirrored in `tsconfig.json paths` — this
+is a best practice regardless, since TypeScript needs them for type resolution. The
+`bundlerAliases` option provides an escape hatch for divergent cases, e.g.:
+```json
+{ "bundlerAliases": { "src": "./src", "assets": "./assets" } }
+```
 
-### 5. React.lazy() dynamic imports
+### 5. Dynamic imports with literal specifiers (React.lazy)
 
-**Problem:** Back-office has 17+ `React.lazy(() => import('./SomePage'))` calls.
-These are dynamic imports but with literal string arguments.
+**Problem:** `React.lazy(() => import('./SomePage'))` is a dynamic import but the
+specifier is a string literal and fully resolvable statically.
 
-**Mitigation:** The Babel AST traversal detects dynamic imports with literal arguments
-correctly — the string is readable. These are classified normally. Non-literal specifiers
-are flagged as `classification: 'probable'` warnings.
+**Mitigation:** The Babel AST traversal correctly reads the string literal from dynamic
+`import()` calls. Only truly non-literal specifiers (`import(someVariable)`) are reported
+as `classification: 'probable'`.
 
-### 6. Three package.json files (root, cli/, k6/)
+### 6. Generated directories (graphql codegen, @mf-types, etc.)
 
-**Problem:** `cli/` and `k6/` have their own `package.json` files and their own `yarn.lock`
-files — they are self-contained projects, not workspace packages. They are developer tooling
-(a Jira CLI) and load testing scripts respectively. Neither ships to production.
+**Problem:** Projects often have auto-generated source directories. Imports within them
+may look like phantom deps.
 
-**Mitigation:** Explicitly exclude `cli/**` and `k6/**` via the back-office config file.
-`analyze()` reads the root `package.json` only. Running `pnpm install` at the root won't
-affect these subdirectories. If they need migration later, run darkwing-duck separately
-with `--cwd cli/` or `--cwd k6/`.
-
-### 7. Generated directories (src/gql/, @mf-types/)
-
-**Problem:** Imports from `src/gql/` are always relative (`./types`, `../gql/SomeQuery`),
-so they're classified as relative paths and don't cause false positives. `@mf-types/` is
-handled by the disk-check on the `*` alias.
-
-**Mitigation:** No special handling needed. Document that generated directories should
-be included in the source scan (so their imports are followed) but their files' own
-dependencies won't typically be phantom deps.
+**Mitigation:** Imports from generated directories are typically relative paths (`./types`,
+`../gql/SomeQuery`), so they classify as `'relative'` before reaching the phantom check.
+No special handling is needed. Add generated directories to `ignore` only if they contain
+bare module imports you want to skip.
 
 ---
 
