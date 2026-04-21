@@ -41,6 +41,10 @@ OPTIONS
   -h, --help                 Show this help
   -v, --version              Print version
 
+EXIT CODES
+  0  No phantom dependencies found
+  1  One or more phantom dependencies found (or --json mode with phantoms)
+
 CONFIG FILE
   Place a darkwing-duck.config.json at the project root to set persistent options.
 
@@ -86,8 +90,7 @@ console.log(`\nPhantom dependencies (${phantomDeps.length}):\n`)
 for (const dep of phantomDeps) {
   const depTypeLabel = dep.suggestedDepType === 'dependency' ? 'dep' : dep.suggestedDepType === 'devDependency' ? 'devDep' : 'optDep'
   const version = dep.suggestedVersion ? `@${dep.suggestedVersion}` : ''
-  const certain = dep.classification === 'probable' ? ' (probable)' : ''
-  console.log(`  ${dep.packageName}${version}  [${depTypeLabel}]${certain}`)
+  console.log(`  ${dep.packageName}${version}  [${depTypeLabel}]`)
 
   for (const loc of dep.locations.slice(0, 3)) {
     console.log(`    ${loc.file}:${loc.line}`)

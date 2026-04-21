@@ -1,0 +1,7 @@
+{
+  "name": "fixture-import-forms",
+  "version": "1.0.0",
+  "dependencies": {
+    "declared-dep": "^1.0.0"
+  }
+}

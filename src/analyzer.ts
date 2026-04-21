@@ -62,7 +62,7 @@ export async function analyze(options: AnalyzerOptions = {}): Promise<AnalysisRe
       classification: Classification
       kinds: Set<FileKind>
       isOptional: boolean
-      allTypeOnly: boolean
+      hasOnlyTypeImports: boolean
     }
   >()
 
@@ -112,7 +112,7 @@ export async function analyze(options: AnalyzerOptions = {}): Promise<AnalysisRe
         existing.locations.push(location)
         existing.kinds.add(kind)
         if (record.isOptional) existing.isOptional = true
-        if (!isTypeOnly) existing.allTypeOnly = false
+        if (!isTypeOnly) existing.hasOnlyTypeImports = false
       } else {
         phantomMap.set(packageName, {
           specifiers: new Set([record.specifier]),
@@ -120,7 +120,7 @@ export async function analyze(options: AnalyzerOptions = {}): Promise<AnalysisRe
           classification: 'certain',
           kinds: new Set([kind]),
           isOptional: record.isOptional,
-          allTypeOnly: isTypeOnly,
+          hasOnlyTypeImports: isTypeOnly,
         })
       }
     }
@@ -130,7 +130,7 @@ export async function analyze(options: AnalyzerOptions = {}): Promise<AnalysisRe
   const phantomDeps: PhantomDep[] = []
 
   for (const [packageName, data] of phantomMap) {
-    const suggestedDepType = resolveDepType(data.kinds, data.isOptional, data.allTypeOnly)
+    const suggestedDepType = resolveDepType(data.kinds, data.isOptional, data.hasOnlyTypeImports)
     const suggestedVersion = resolveVersion(packageName, cwd, opts.versionStrategy)
 
     phantomDeps.push({
@@ -162,12 +162,12 @@ export async function analyze(options: AnalyzerOptions = {}): Promise<AnalysisRe
 function resolveDepType(
   kinds: Set<FileKind>,
   isOptional: boolean,
-  allTypeOnly: boolean,
+  hasOnlyTypeImports: boolean,
 ): DepType {
   if (isOptional) return 'optionalDependency'
 
   // Type-only imports are always devDeps (types aren't needed at runtime)
-  if (allTypeOnly) return 'devDependency'
+  if (hasOnlyTypeImports) return 'devDependency'
 
   // If it appears in any non-test source file, it's a runtime dep
   if (kinds.has('source')) return 'dependency'

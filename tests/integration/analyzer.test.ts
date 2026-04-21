@@ -78,6 +78,50 @@ describe('wildcard-alias', () => {
   })
 })
 
+describe('import-forms', () => {
+  it('detects phantom deps from require() calls', async () => {
+    const result = await analyze({ cwd: resolve(fixturesDir, 'import-forms') })
+
+    const names = result.phantomDeps.map((d) => d.packageName)
+    expect(names).toContain('cjs-phantom')
+  })
+
+  it('detects phantom deps from require.resolve() calls', async () => {
+    const result = await analyze({ cwd: resolve(fixturesDir, 'import-forms') })
+
+    const names = result.phantomDeps.map((d) => d.packageName)
+    expect(names).toContain('resolve-phantom')
+  })
+
+  it('detects phantom deps from dynamic import() with literal specifier', async () => {
+    const result = await analyze({ cwd: resolve(fixturesDir, 'import-forms') })
+
+    const names = result.phantomDeps.map((d) => d.packageName)
+    expect(names).toContain('dynamic-phantom')
+  })
+
+  it('detects phantom deps from named re-exports', async () => {
+    const result = await analyze({ cwd: resolve(fixturesDir, 'import-forms') })
+
+    const names = result.phantomDeps.map((d) => d.packageName)
+    expect(names).toContain('re-export-phantom')
+  })
+
+  it('detects phantom deps from star re-exports', async () => {
+    const result = await analyze({ cwd: resolve(fixturesDir, 'import-forms') })
+
+    const names = result.phantomDeps.map((d) => d.packageName)
+    expect(names).toContain('star-export-phantom')
+  })
+
+  it('does not flag declared deps regardless of import form', async () => {
+    const result = await analyze({ cwd: resolve(fixturesDir, 'import-forms') })
+
+    const names = result.phantomDeps.map((d) => d.packageName)
+    expect(names).not.toContain('declared-dep')
+  })
+})
+
 describe('excludePackages', () => {
   it('does not flag packages listed in excludePackages', async () => {
     const result = await analyze({
