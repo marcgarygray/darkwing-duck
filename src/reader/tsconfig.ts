@@ -30,5 +30,6 @@ export function readTsconfigPaths(tsconfigPath: string): TsconfigPaths | null {
     baseUrl: options.baseUrl ? resolve(options.baseUrl) : undefined,
     pathsBasePath: resolve(pathsBasePath),
     paths,
+    globalTypes: (options.types as string[] | undefined) ?? [],
   }
 }
