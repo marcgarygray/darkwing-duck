@@ -19,7 +19,7 @@ export type DepType = 'dependency' | 'devDependency' | 'optionalDependency'
 
 export type FileKind = 'source' | 'test' | 'config' | 'story' | 'e2e'
 
-export type Classification = 'certain' | 'probable'
+export type Classification = 'certain'
 
 export interface ImportRecord {
   specifier: string
@@ -80,7 +80,6 @@ export interface AnalyzerOptions {
   excludePackages?: string[]
   tsconfig?: string
   versionStrategy?: 'node-modules' | 'lockfile' | 'registry'
-  fix?: boolean
 }
 
 export interface TsconfigPaths {

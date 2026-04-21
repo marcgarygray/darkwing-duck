@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { AnalyzerOptions } from '../types.js'
 
-type FileConfig = Omit<AnalyzerOptions, 'cwd' | 'fix'>
+type FileConfig = Omit<AnalyzerOptions, 'cwd'>
 
 const CONFIG_FILENAMES = [
   'darkwing-duck.config.json',
