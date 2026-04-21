@@ -1,0 +1,61 @@
+{
+  "name": "darkwing-duck",
+  "version": "0.1.0",
+  "description": "Detect phantom dependencies before migrating from Yarn to pnpm",
+  "keywords": [
+    "pnpm",
+    "yarn",
+    "phantom-dependencies",
+    "migration"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "darkwing-duck": "./dist/bin/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.24.0",
+    "@babel/traverse": "^7.24.0",
+    "@babel/types": "^7.24.0",
+    "fast-glob": "^3.3.2",
+    "typescript": "^5.4.0"
+  },
+  "packageManager": "pnpm@10.30.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.3.0",
+    "@types/babel__traverse": "^7.20.5",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.12.0",
+    "esbuild": "^0.28.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "tsup": "^8.0.2"
+  }
+}
