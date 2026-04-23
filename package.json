@@ -9,6 +9,10 @@
     "migration"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/marcgarygray/darkwing-duck"
+  },
   "type": "module",
   "engines": {
     "node": ">=20"
